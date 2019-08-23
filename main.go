@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"net/http"
 	"net/url"
 	"os"
 	"regexp"
@@ -17,7 +19,6 @@ type LogProcess struct {
 	read Reader
 	write Writer
 }
-
 
 type Reader interface {
 	Read(rr chan []byte)
@@ -35,6 +36,14 @@ type WriteToDb struct {
 	dsn string
 }
 
+type LogInfo struct {
+	timeLocal time.Time
+	ip string
+	method string
+	path string
+	http string
+	status string
+}
 
 func (rr *ReadFromFile) Read(r chan []byte)  {
 
@@ -70,14 +79,6 @@ func (l *LogProcess) ProcessLog()  {
 	}
 }
 
-type LogInfo struct {
-	timeLocal time.Time
-	ip string
-	method string
-	path string
-	http string
-	status string
-}
 func (ww *WriteToDb) Write(w chan []byte)  {
 
 	//120.216.207.220 - - [22/Aug/2019:14:58:35 +0800] "GET http://finance.sina.com.cn/ HTTP/1.1" 200 194 "http://finance.sina.com.cn/" "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)"
@@ -124,17 +125,45 @@ func (ww *WriteToDb) Write(w chan []byte)  {
 
 		info.status = matches[8]
 
+		InsertToDB(info)
 
 		fmt.Println("info:",info)
 
 	}
 }
 
+func InsertToDB(data LogInfo)  {
 
+	InfluxdbUrl:="http://127.0.0.1:8086/write?db=log"
+
+	client := &http.Client{}
+
+	dataInsert:="nginx_log,ip="+data.ip+",method="+data.method+" path=22"
+
+	req, err := http.NewRequest("POST", InfluxdbUrl, strings.NewReader(dataInsert))
+	if err != nil {
+		fmt.Println("error post:",err)
+	}
+
+	//req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	//req.Header.Set("Cookie", "name=anny")
+
+	resp, err := client.Do(req)
+
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("error read:",err)
+	}
+	fmt.Println("4444:",resp)
+	fmt.Println("5555:",body)
+}
+//curl -i -XPOST 'http://47.94.169.212:8086/write?db=log' --data-binary 'cpu_load_short,host=server01,region=us-west value=0.64 1434055562000000000'
 func main(){
 
 	rr1:=&ReadFromFile{
-		path:"./access.log",
+		path:"D:/code/go/src/go-log-analysis/access.log",
 	}
 
 	ww1:=&WriteToDb{
