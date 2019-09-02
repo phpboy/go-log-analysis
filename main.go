@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"go-log-analysis/mysql"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -36,15 +37,6 @@ type WriteToDb struct {
 	dsn string
 }
 
-type LogInfo struct {
-	timeLocal time.Time
-	ip string
-	method string
-	path string
-	http string
-	status string
-}
-
 func (rr *ReadFromFile) Read(r chan []byte)  {
 
 	file,err:=os.Open(rr.path)
@@ -60,7 +52,7 @@ func (rr *ReadFromFile) Read(r chan []byte)  {
 	for{
 		count++
 		if count>5{
-			break
+			//break
 		}
 		line,err:=bufFile.ReadBytes('\n')
 		if err==io.EOF{
@@ -95,16 +87,16 @@ func (ww *WriteToDb) Write(w chan []byte)  {
 
 		t,err:=time.ParseInLocation("02/Jan/2006:15:04:05 +0800",matches[5],loc)
 
-		info:=LogInfo{}
+		info:=mysql.LogInfo{}
 
 		if err!=nil{
 			fmt.Println("time err",err.Error(),matches[5])
 			continue
 		}
 
-		info.timeLocal = t
+		info.TimeLocal = t
 
-		info.ip = matches[1]
+		info.Ip = matches[1]
 
 		//"GET /lnmp.gif HTTP/1.1"
 		getInfo := strings.Split(matches[7], " ")
@@ -113,7 +105,7 @@ func (ww *WriteToDb) Write(w chan []byte)  {
 			continue
 		}
 
-		info.method = getInfo[0]
+		info.Method = getInfo[0]
 
 		u,err:= url.Parse(getInfo[1])
 
@@ -121,9 +113,9 @@ func (ww *WriteToDb) Write(w chan []byte)  {
 			fmt.Println("Parse err",err)
 		}
 
-		info.path = u.Path
+		info.Path = u.Path
 
-		info.status = matches[8]
+		info.Status = matches[8]
 
 		InsertToDB(info)
 
@@ -132,13 +124,18 @@ func (ww *WriteToDb) Write(w chan []byte)  {
 	}
 }
 
-func InsertToDB(data LogInfo)  {
+func InsertToDB(data mysql.LogInfo)  {
+	MYSQL:= mysql.InitMysql()
+	mysql.InsertData(MYSQL,data)
+}
+
+func InsertToFluxDB(data mysql.LogInfo)  {
 
 	InfluxdbUrl:="http://127.0.0.1:8086/write?db=log"
 
 	client := &http.Client{}
 
-	dataInsert:="nginx_log,ip="+data.ip+",method="+data.method+" path=22"
+	dataInsert:="nginx_log,ip="+data.Ip +",method="+data.Method +" path=22"
 
 	req, err := http.NewRequest("POST", InfluxdbUrl, strings.NewReader(dataInsert))
 	if err != nil {
@@ -159,6 +156,7 @@ func InsertToDB(data LogInfo)  {
 	fmt.Println("4444:",resp)
 	fmt.Println("5555:",body)
 }
+
 //curl -i -XPOST 'http://47.94.169.212:8086/write?db=log' --data-binary 'cpu_load_short,host=server01,region=us-west value=0.64 1434055562000000000'
 func main(){
 
@@ -177,9 +175,11 @@ func main(){
 		write:ww1,
 	}
 
-	go 	l.read.Read(l.r)
-	go	l.ProcessLog()
-	go	l.write.Write(l.w)
+	for i:=1;i<6;i++{
+		go 	l.read.Read(l.r)
+		go	l.ProcessLog()
+		go	l.write.Write(l.w)
+	}
 
-	time.Sleep(1*time.Second)
+	time.Sleep(1000*time.Second)
 }
