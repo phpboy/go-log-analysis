@@ -2,11 +2,11 @@ package main
 
 import (
 	"bufio"
+	"database/sql"
 	"fmt"
+	"go-log-analysis/influxdb"
 	"go-log-analysis/mysql"
 	"io"
-	"io/ioutil"
-	"net/http"
 	"net/url"
 	"os"
 	"regexp"
@@ -34,7 +34,7 @@ type ReadFromFile struct {
 }
 
 type WriteToDb struct {
-	dsn string
+	db *sql.DB
 }
 
 func (rr *ReadFromFile) Read(r chan []byte)  {
@@ -117,47 +117,24 @@ func (ww *WriteToDb) Write(w chan []byte)  {
 
 		info.Status = matches[8]
 
-		InsertToDB(info)
+		InsertToMysql(ww.db,info)
+		InsertToFluxDB(info)
 
 		fmt.Println("info:",info)
 
 	}
 }
 
-func InsertToDB(data mysql.LogInfo)  {
-	MYSQL:= mysql.InitMysql()
-	mysql.InsertData(MYSQL,data)
+//mysql
+func InsertToMysql(db *sql.DB,data mysql.LogInfo)  {
+	mysql.InsertData(db,data)
 }
-
+//influxDB
 func InsertToFluxDB(data mysql.LogInfo)  {
-
-	InfluxdbUrl:="http://127.0.0.1:8086/write?db=log"
-
-	client := &http.Client{}
-
-	dataInsert:="nginx_log,ip="+data.Ip +",method="+data.Method +" path=22"
-
-	req, err := http.NewRequest("POST", InfluxdbUrl, strings.NewReader(dataInsert))
-	if err != nil {
-		fmt.Println("error post:",err)
-	}
-
-	//req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	//req.Header.Set("Cookie", "name=anny")
-
-	resp, err := client.Do(req)
-
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println("error read:",err)
-	}
-	fmt.Println("4444:",resp)
-	fmt.Println("5555:",body)
+	influxdb.InsertData(data)
 }
 
-//curl -i -XPOST 'http://47.94.169.212:8086/write?db=log' --data-binary 'cpu_load_short,host=server01,region=us-west value=0.64 1434055562000000000'
+
 func main(){
 
 	rr1:=&ReadFromFile{
@@ -165,7 +142,7 @@ func main(){
 	}
 
 	ww1:=&WriteToDb{
-		dsn:"111",//TODO
+		db:mysql.InitMysql(),
 	}
 
 	var l = &LogProcess{
